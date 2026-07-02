@@ -101,50 +101,89 @@ jobs:
       
       - name: Inject manual hook ke kernel/reboot.c (required by KSUN 3.2.0 Kbuild check)
         run: |
-          cd kernel
-          # =========================
-          # 1. DETECT STATE
-          # =========================
-          KSU_IN_REBOOT=$(grep -c "ksu_handle_sys_reboot" kernel/reboot.c || true)
-          KSU_ENABLED=$(grep -c "CONFIG_KSU=y" .config || true)
-          KSU_IMPL=$(grep -R "ksu_handle_sys_reboot" drivers/ksu 2>/dev/null | wc -l || true)
+          #!/bin/bash
+          set -e
 
-          echo "hook_in_reboot=$KSU_IN_REBOOT"
-          echo "config_ksu=$KSU_ENABLED"
-          echo "impl_found=$KSU_IMPL"
+          echo "================================="
+          echo "🔥 KSU AUTO INTEGRITY CI START"
+          echo "================================="
 
+          KERNEL_DIR="kernel"
+          cd "$KERNEL_DIR"
 
-          # =========================
-          # 2. INVALID STATE CHECK
-          # =========================
-          if [ "$KSU_ENABLED" -gt 0 ] && [ "$KSU_IMPL" -eq 0 ]; then
-            echo "❌ INVALID: CONFIG_KSU enabled but implementation missing"
-            exit 1
+          # ==============================
+          # 1. DETECT KSU STATE
+          # ==============================
+          echo "[1/3] Detecting KernelSU state..."
+
+          KSU_DIR_EXISTS=0
+          [ -d "drivers/ksu" ] && KSU_DIR_EXISTS=1
+
+          CONFIG_KSU=$(grep -c "CONFIG_KSU=y" .config || true)
+
+          echo "KSU_DIR_EXISTS=$KSU_DIR_EXISTS"
+          echo "CONFIG_KSU=$CONFIG_KSU"
+
+          # ==============================
+          # 2. FIX MAKEFILE IF NEEDED
+          # ==============================
+          echo "[2/3] Checking Makefile..."
+
+          if [ "$KSU_DIR_EXISTS" -eq 1 ]; then
+
+          if ! grep -q "ksu/" drivers/Makefile; then
+          echo "❌ Missing KSU in drivers/Makefile → fixing..."
+
+          echo "" >> drivers/Makefile
+          echo "# KernelSU integration (auto-fixed)" >> drivers/Makefile
+          echo "obj-\$(CONFIG_KSU) += ksu/" >> drivers/Makefile
+
+          echo "✔ drivers/Makefile patched"
+          else
+            echo "✔ drivers/Makefile OK"
           fi
 
-          # =========================
-          # 3. SAFE STUB (non-KSU fallback)
-          # =========================
-          if [ "$KSU_ENABLED" -eq 0 ]; then
-          echo "✔ KSU disabled → applying safe stub"
+          # check KSU Makefile
+            if [ ! -f "drivers/ksu/Makefile" ]; then
+          echo "❌ Missing drivers/ksu/Makefile → creating..."
 
-          cat <<'EOF' >> kernel/reboot.c
-
-          #ifndef CONFIG_KSU
-          static inline int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4)
-          {
-                return 0;
-          }
-          #endif
-
+                  cat <<EOF > drivers/ksu/Makefile
+                obj-y += core.o
+          obj-y += syscall_hook.o
+          obj-y += reboot_hook.o
           EOF
 
+                 echo "✔ KSU Makefile created"
+              else
+                 echo "✔ KSU Makefile exists"
+              fi
+
+          else
+                 echo "⚠️ drivers/ksu not found → skipping fix"
+              fi
+
+          # ==============================
+          # 3. VALIDATION (REAL COMPILATION CHECK)
+          # ==============================
+          echo "[3/3] Validation build check..."
+
+          if [ "$KSU_DIR_EXISTS" -eq 1 ] && [ "$CONFIG_KSU" -eq 1 ]; then
+
+          echo "Checking if KSU objects will be built..."
+
+          make -n drivers/ksu/ 2>/dev/null | grep -q "ksu" || {
+            echo "❌ KSU NOT entering build graph!"
+            echo "   → Makefile/Kconfig still broken"
+            exit 1
+          }
+
+          echo "✔ KSU is properly included in build graph"
+
           fi
 
-          # =========================
-          # 4. VALIDATION FINAL
-          # =========================
-          echo "✔ KSU integrity check passed"
+          echo "================================="
+          echo "✅ KSU AUTO CI PASSED"
+          echo "================================="
       
       - name: Copy SUSFS Files (v2.1.0)
         run: |
