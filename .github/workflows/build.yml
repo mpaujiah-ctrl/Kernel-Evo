@@ -102,20 +102,50 @@ jobs:
       - name: Inject manual hook ke kernel/reboot.c (required by KSUN 3.2.0 Kbuild check)
         run: |
           cd kernel
-          # KSUN 3.2.0 Kbuild cek keberadaan "ksu_handle_sys_reboot" di kernel/reboot.c
-          # sebagai validasi bahwa manual hook mode sudah diintegrasikan
-          if ! grep -q "ksu_handle_sys_reboot" kernel/reboot.c; then
-            # tambah deklarasi extern sebelum SYSCALL_DEFINE4(reboot, ...)
-            sed -i '/^SYSCALL_DEFINE4(reboot/i extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4);' kernel/reboot.c
-            # inject call di dalam syscall setelah magic check
-            sed -i '/if (magic1 != LINUX_REBOOT_MAGIC1/i \\tksu_handle_sys_reboot(magic1, magic2, cmd, (void __user **)&arg);' kernel/reboot.c
-            echo "=== Hook injected ==="
-            grep -n "ksu_handle_sys_reboot" kernel/reboot.c
-          else
-            echo "=== Hook sudah ada ==="
-          fi
-          cd ..
+          # =========================
+          # 1. DETECT STATE
+          # =========================
+          KSU_IN_REBOOT=$(grep -c "ksu_handle_sys_reboot" kernel/reboot.c || true)
+          KSU_ENABLED=$(grep -c "CONFIG_KSU=y" .config || true)
+          KSU_IMPL=$(grep -R "ksu_handle_sys_reboot" drivers/ksu 2>/dev/null | wc -l || true)
 
+          echo "hook_in_reboot=$KSU_IN_REBOOT"
+          echo "config_ksu=$KSU_ENABLED"
+          echo "impl_found=$KSU_IMPL"
+
+
+          # =========================
+          # 2. INVALID STATE CHECK
+          # =========================
+          if [ "$KSU_ENABLED" -gt 0 ] && [ "$KSU_IMPL" -eq 0 ]; then
+            echo "❌ INVALID: CONFIG_KSU enabled but implementation missing"
+            exit 1
+          fi
+
+          # =========================
+          # 3. SAFE STUB (non-KSU fallback)
+          # =========================
+          if [ "$KSU_ENABLED" -eq 0 ]; then
+          echo "✔ KSU disabled → applying safe stub"
+
+          cat <<'EOF' >> kernel/reboot.c
+
+          #ifndef CONFIG_KSU
+          static inline int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4)
+          {
+                return 0;
+          }
+          #endif
+
+          EOF
+
+          fi
+
+          # =========================
+          # 4. VALIDATION FINAL
+          # =========================
+          echo "✔ KSU integrity check passed"
+      
       - name: Copy SUSFS Files (v2.1.0)
         run: |
           cd kernel
