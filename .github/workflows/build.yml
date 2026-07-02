@@ -20,7 +20,7 @@ jobs:
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/proton
 
-      - name: Clone Spark Kernel
+      - name: Clone Evo Kernel
         run: git clone --depth=1 -b pyro https://github.com/chematelegram/kernel_xiaomi_cepheus kernel
    
       - name: Clone AnyKernel3
