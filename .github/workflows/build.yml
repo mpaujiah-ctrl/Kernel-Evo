@@ -154,7 +154,7 @@ jobs:
             echo "=== Makefile updated dengan ksu_reboot.o ==="
           fi
 
-        cd ..
+          cd ..
 
                
       - name: Copy SUSFS Files (v2.1.0)
