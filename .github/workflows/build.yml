@@ -167,7 +167,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo 'CONFIG_LOCALVERSION="-TURTLE-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
+          echo 'CONFIG_LOCALVERSION="-DRAGON-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
            
       - name: Patch WALT stub
         run: |
