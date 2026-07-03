@@ -19,7 +19,7 @@ jobs:
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/proton
 
-      - name: Clone Spark Kernel
+      - name: Clone Evolution X Kernel
         run: git clone --depth=1 -b pyro https://github.com/chematelegram/kernel_xiaomi_cepheus kernel
    
       - name: Clone AnyKernel3
@@ -154,7 +154,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo 'CONFIG_LOCALVERSION="-TURTLE-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
+          echo 'CONFIG_LOCALVERSION="-DRAGON-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
            
       - name: Patch WALT stub
         run: |
