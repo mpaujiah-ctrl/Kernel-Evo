@@ -1,4 +1,4 @@
-name: Cepheus Evo KSUN+SUSFS Test
+name: Cepheus evo KSUN+SUSFS Test
 
 on:
   workflow_dispatch:
@@ -16,11 +16,10 @@ jobs:
           sudo apt install -y bc bison flex libssl-dev libelf-dev build-essential git curl zip python3 gcc-aarch64-linux-gnu
           sudo apt install -y gcc-arm-linux-gnueabi
           sudo apt install -y libyaml-dev
-
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/proton
 
-      - name: Clone Evo Kernel
+      - name: Clone Spark Kernel
         run: git clone --depth=1 -b pyro https://github.com/chematelegram/kernel_xiaomi_cepheus kernel
    
       - name: Clone AnyKernel3
@@ -36,7 +35,6 @@ jobs:
           grep "SUSFS_VERSION" susfs/kernel_patches/include/linux/susfs.h
           echo "=== Verifikasi 3 file ada ==="
           ls -la susfs/kernel_patches/fs/susfs.c susfs/kernel_patches/include/linux/susfs.h susfs/kernel_patches/include/linux/susfs_def.h
-
       - name: Configure AnyKernel3
         run: |
           cd AnyKernel3
@@ -57,35 +55,27 @@ jobs:
           mkdir -p ksun_src
           tar -xzf ksun.tar.gz -C ksun_src --strip-components=1
           rm ksun.tar.gz
-
           echo "=== Verifikasi extract ==="
           ls ksun_src/kernel/
-
           # PENTING: hapus dulu kernelsu bawaan Spark kernel sebelum symlink,
           # kalau enggak ln -sf bakal nyimpen symlink DI DALAM folder lama (bukan ganti)
           rm -rf drivers/staging/kernelsu
-
           # Symlink manual (replikasi setup.sh, tapi arahin ke fork rifsxd)
           ln -sf "$(realpath --relative-to=drivers/staging ksun_src/kernel)" drivers/staging/kernelsu
           grep -q "kernelsu" drivers/staging/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/staging/Makefile
-          grep -q "drivers/kernelsu/Kconfig" drivers/staging/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/staging/Kconfig
-
+          grep -q "drivers/kernelsu/Kconfig" drivers/staging/Kconfig || echo 'source "drivers/staging/kernelsu/Kconfig"' >> drivers/staging/Kconfig
           echo "=== Verifikasi symlink ==="
           ls -la drivers/staging/kernelsu
           ls drivers/staging/kernelsu/core/
-
           # Fix KSU_VERSION: karena pakai tarball (bukan git clone), Kbuild gak bisa
           # detect commit count lewat git rev-list, jadi fallback ke nilai 1.
           # Patch Kbuild buat hardcode versi yang match sama manager APK (33129)
           sed -i 's/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := 33129/' ksun_src/kernel/Kbuild
           echo "=== Verifikasi KSU_VERSION fix ==="
           grep "KSU_VERSION_FALLBACK" ksun_src/kernel/Kbuild
-
           # Stub path_umount untuk kernel 4.14
           echo 'int path_umount(struct path *path, int flags) { return 0; }' >> fs/namespace.c
-
           cd ..
-
       - name: Grep KernelSU Hooks
         run: |
           cd kernel
@@ -103,7 +93,8 @@ jobs:
         run: |
           cd kernel
           # KSUN 3.2.0 Kbuild cek keberadaan "ksu_handle_sys_reboot" di kernel/reboot.c
-                if ! grep -q "ksu_handle_sys_reboot" kernel/reboot.c; then
+          # sebagai validasi bahwa manual hook mode sudah diintegrasikan
+          if ! grep -q "ksu_handle_sys_reboot" kernel/reboot.c; then
             # tambah deklarasi extern sebelum SYSCALL_DEFINE4(reboot, ...)
             sed -i '/^SYSCALL_DEFINE4(reboot/i extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4);' kernel/reboot.c
             # inject call di dalam syscall setelah magic check
@@ -113,50 +104,7 @@ jobs:
           else
             echo "=== Hook sudah ada ==="
           fi
-
-          # tambahkan patch resmi KSU reboot handler kalau belum ada
-          if [ ! -f kernel/ksu_reboot.c ]; then
-            cat << 'EOF' > kernel/ksu_reboot.c
-            // Implementasi resmi KernelSU reboot hook
-            #include <linux/uaccess.h>
-            #include <linux/reboot.h>
-            #include <linux/printk.h>
-
-            int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4) {
-                if (magic1 == LINUX_REBOOT_MAGIC1 && magic2 == LINUX_REBOOT_MAGIC2) {
-                    switch (cmd) {
-                    case LINUX_REBOOT_CMD_RESTART:
-                        pr_info("KSU: intercept reboot restart\n");
-                        // tambahkan logic custom, misalnya trigger KSU service
-                        break;
-                    case LINUX_REBOOT_CMD_POWER_OFF:
-                        pr_info("KSU: intercept power off\n");
-                        // logic tambahan di sini
-                        break;
-                    case LINUX_REBOOT_CMD_RESTART2:
-                        pr_info("KSU: intercept restart2\n");
-                        // bisa ambil argumen dari *arg4
-                        break;
-                    default:
-                        pr_info("KSU: reboot cmd %u tidak di-hook\n", cmd);
-                        break;
-                    }
-                }
-                return 0; // biarkan syscall lanjut normal
-            }
-          EOF
-              echo "=== Patch resmi ksu_reboot.c ditambahkan ==="
-          fi
-
-          # pastikan Makefile compile file patch
-          if ! grep -q "ksu_reboot.o" kernel/Makefile; then
-            echo "obj-y += ksu_reboot.o" >> kernel/Makefile
-            echo "=== Makefile updated dengan ksu_reboot.o ==="
-          fi
-
           cd ..
-
-               
       - name: Copy SUSFS Files (v2.1.0)
         run: |
           cd kernel
@@ -166,13 +114,11 @@ jobs:
           echo "=== Verifikasi ==="
           ls -la include/linux/susfs.h fs/susfs.c include/linux/susfs_def.h
           grep "SUSFS_VERSION" include/linux/susfs.h
-
           # PENTING: wire susfs.o ke fs/Makefile, kalau enggak susfs.c gak ikut dikompilasi
           # walaupun filenya ada, jadi semua symbol susfs_* bakal "undefined" pas linking
           grep -q "susfs.o" fs/Makefile || echo 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' >> fs/Makefile
           echo "=== Verifikasi Makefile ==="
           grep "susfs" fs/Makefile
-
       - name: Setup defconfig KSUN
         run: |
           echo "CONFIG_KSU=y" >> kernel/arch/arm64/configs/cepheus_defconfig
@@ -208,7 +154,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo 'CONFIG_LOCALVERSION="-DRAGON-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
+          echo 'CONFIG_LOCALVERSION="-TURTLE-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
            
       - name: Patch WALT stub
         run: |
@@ -321,7 +267,6 @@ jobs:
           cd kernel
           curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/proc/task_mmu.c" -o fs/proc/task_mmu.c
           grep -c "susfs" fs/proc/task_mmu.c
-
       - name: Verifikasi susfs_init sudah baked-in di KSUN 3.2.0-legacy-susfs-v2
         run: |
           cd kernel
@@ -373,7 +318,6 @@ jobs:
           # Copy modules kalau ada
           find kernel/out -name '*.ko' -exec cp {} AnyKernel3/modules/system/lib/modules/ \;
           cd AnyKernel3 && zip -r9 ../Cepheus-KSUN3.2-SUSFSv2-Test.zip *
-
       - name: Upload artifact   
         uses: actions/upload-artifact@v4
         with:
@@ -381,4 +325,3 @@ jobs:
             path: |
               Cepheus-KSUN3.2-SUSFSv2-Test.zip
               kernel/out/arch/arm64/boot/Image.gz-dtb
-              
