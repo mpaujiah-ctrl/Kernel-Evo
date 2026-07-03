@@ -105,6 +105,15 @@ jobs:
             echo "=== Hook sudah ada ==="
           fi
           cd ..
+      
+      - name: Inject manual hook ke exec.c, input.c, devpts (WAJIB buat root beneran jalan)
+        run: |
+          cd kernel
+          python3 ../.github/scripts/inject_ksu_hooks.py exec fs/exec.c
+          python3 ../.github/scripts/inject_ksu_hooks.py input drivers/input/input.c
+          python3 ../.github/scripts/inject_ksu_hooks.py devpts fs/devpts/inode.c
+          cd ..
+      
       - name: Copy SUSFS Files (v2.1.0)
         run: |
           cd kernel
