@@ -178,6 +178,53 @@ def patch_devpts(path: Path):
     path.write_text(content)
     print("=== inode.c: hook berhasil di-inject ===")
 
+def patch_read_write(path: Path):
+    marker = "ksu_handle_vfs_read"
+    content = path.read_text()
+    if marker in content:
+        print("=== read_write.c: hook sudah ada, skip ===")
+        return
+
+    old_sig = (
+        "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n"
+        "{\n"
+        "\tssize_t ret;\n"
+        "\n"
+        "\tif (!(file->f_mode & FMODE_READ))\n"
+        "\t\treturn -EBADF;"
+    )
+    if old_sig not in content:
+        print("GAGAL: pattern vfs_read tidak ditemukan persis di read_write.c")
+        print("Cek manual, mungkin ada perbedaan whitespace/versi source.")
+        sys.exit(1)
+
+    extern_block = (
+        "#ifdef CONFIG_KSU\n"
+        "extern bool ksu_vfs_read_hook __read_mostly;\n"
+        "extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,\n"
+        "\t\t\t\tsize_t *count_ptr, loff_t **pos);\n"
+        "#endif\n"
+    )
+
+    new_sig = (
+        extern_block +
+        "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n"
+        "{\n"
+        "\tssize_t ret;\n"
+        "\n"
+        "#ifdef CONFIG_KSU\n"
+        "\tif (unlikely(ksu_vfs_read_hook))\n"
+        "\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n"
+        "#endif\n"
+        "\n"
+        "\tif (!(file->f_mode & FMODE_READ))\n"
+        "\t\treturn -EBADF;"
+    )
+
+    content = content.replace(old_sig, new_sig)
+    path.write_text(content)
+    print("=== read_write.c: hook berhasil di-inject ===")
+
 
 def main():
     if len(sys.argv) != 3:
@@ -198,6 +245,11 @@ def main():
     else:
         print(f"GAGAL: target '{target}' belum didukung script ini")
         sys.exit(1)
+
+elif target == "open":
+        patch_open(filepath)
+    elif target == "read_write":
+        patch_read_write(filepath)
 
 
 if __name__ == "__main__":
