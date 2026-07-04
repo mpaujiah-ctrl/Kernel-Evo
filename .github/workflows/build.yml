@@ -112,6 +112,8 @@ jobs:
           python3 ../.github/scripts/inject_ksu_hooks.py exec fs/exec.c
           python3 ../.github/scripts/inject_ksu_hooks.py input drivers/input/input.c
           python3 ../.github/scripts/inject_ksu_hooks.py devpts fs/devpts/inode.c
+          python3 ../.github/scripts/inject_ksu_hooks.py open fs/open.c
+          python3 ../.github/scripts/inject_ksu_hooks.py read_write fs/read_write.c
           cd ..
       
       - name: Copy SUSFS Files (v2.1.0)
