@@ -242,14 +242,13 @@ def main():
         patch_input(filepath)
     elif target == "devpts":
         patch_devpts(filepath)
-    else:
-        print(f"GAGAL: target '{target}' belum didukung script ini")
-        sys.exit(1)
-
-elif target == "open":
+    elif target == "open":
         patch_open(filepath)
     elif target == "read_write":
         patch_read_write(filepath)
+    else:
+        print(f"GAGAL: target '{target}' belum didukung script ini")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
