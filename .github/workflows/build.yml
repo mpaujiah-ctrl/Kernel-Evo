@@ -61,7 +61,6 @@ jobs:
           ls ksun_src/kernel/
           # PENTING: hapus dulu kernelsu bawaan Spark kernel sebelum symlink,
           # kalau enggak ln -sf bakal nyimpen symlink DI DALAM folder lama (bukan ganti)
-          rm -rf drivers/staging/kernelsu
           # Symlink manual (replikasi setup.sh, tapi arahin ke fork rifsxd)
           ln -sf "$(realpath --relative-to=drivers/staging ksun_src/kernel)" drivers/staging/kernelsu
           grep -q "kernelsu" drivers/staging/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/staging/Makefile
