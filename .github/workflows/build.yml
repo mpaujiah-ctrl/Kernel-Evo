@@ -144,6 +144,25 @@ jobs:
           grep -q "susfs.o" fs/Makefile || echo 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' >> fs/Makefile
           echo "=== Verifikasi Makefile ==="
           grep "susfs" fs/Makefile
+      
+      - name: Apply SELinux policy patch
+        run: |
+          # SUSFS rules
+          cat >> sepolicy/susfs.te <<'EOF'
+          allow sufs self:process execmem;
+          allow sufs kernel:security { read write };
+          allow sufs init:process { transition };
+          EOF
+      
+          # KernelSU rules
+          cat >> sepolicy/ksu.te <<'EOF'
+          allow ksu self:process execmem;
+          allow ksu kernel:security { read write };
+          allow ksu init:process { transition };
+          allow ksu sufs:process { getattr execute };
+          EOF
+
+      
       - name: Setup defconfig KSUN
         run: |
           echo "CONFIG_KSU=y" >> kernel/arch/arm64/configs/cepheus_defconfig
