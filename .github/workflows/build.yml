@@ -181,24 +181,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo 'CONFIG_LOCALVERSION="-DRAGON-SUSFS-v2"' >> kernel/arch/arm64/configs/cepheus_defconfig
-           
-      - name: Apply SELinux policy patch
-        run: |
-          # SUSFS rules
-          cat >> sepolicy/susfs.te <<'EOF'
-          allow sufs self:process execmem;
-          allow sufs kernel:security { read write };
-          allow sufs init:process { transition };
-          EOF
-      
-          # KernelSU rules
-          cat >> sepolicy/ksu.te <<'EOF'
-          allow ksu self:process execmem;
-          allow ksu kernel:security { read write };
-          allow ksu init:process { transition };
-          allow ksu sufs:process { getattr execute };
-          EOF
-      
+                 
       - name: Patch WALT stub
         run: |
           cd kernel
@@ -310,6 +293,7 @@ jobs:
           cd kernel
           curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/proc/task_mmu.c" -o fs/proc/task_mmu.c
           grep -c "susfs" fs/proc/task_mmu.c
+      
       - name: Verifikasi susfs_init sudah baked-in di KSUN 3.2.0-legacy-susfs-v2
         run: |
           cd kernel
@@ -317,6 +301,7 @@ jobs:
           grep -n "susfs_init" drivers/staging/kernelsu/core/init.c
           echo "=== susfs_is_current_ksu_domain implementasi (harus di selinux.c) ==="
           grep -n "susfs_is_current_ksu_domain" drivers/staging/kernelsu/selinux/selinux.c
+      
       - name: Build kernel
         run: |
           cd kernel
