@@ -111,11 +111,14 @@ jobs:
       - name: Debug isi fs/open.c dan fs/read_write.c
         run: |
           cd kernel
-          echo "=== fs/open.c: cari fungsi do_faccessat ==="
-          grep -n -A 15 "do_faccessat" fs/open.c
+          echo "=== fs/open.c: cari SEMUA yang mengandung 'faccessat' ==="
+          grep -n -i "faccessat" fs/open.c || echo "TIDAK DITEMUKAN sama sekali"
           echo ""
-          echo "=== fs/read_write.c: cari fungsi vfs_read ==="
-          grep -n -A 15 "^ssize_t vfs_read" fs/read_write.c
+          echo "=== fs/open.c: tampilkan 20 baris sekitar SYSCALL_DEFINE3(faccessat ==="
+          grep -n -A 20 "SYSCALL_DEFINE3(faccessat" fs/open.c || echo "SYSCALL_DEFINE3(faccessat TIDAK DITEMUKAN"
+          echo ""
+          echo "=== fs/read_write.c: cari vfs_read ==="
+          grep -n -A 15 "vfs_read" fs/read_write.c || echo "vfs_read TIDAK DITEMUKAN"
       
       - name: Inject manual hook ke exec.c, input.c, devpts (WAJIB buat root beneran jalan)
         run: |
