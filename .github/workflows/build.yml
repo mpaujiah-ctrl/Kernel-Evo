@@ -16,6 +16,7 @@ jobs:
           sudo apt install -y bc bison flex libssl-dev libelf-dev build-essential git curl zip python3 gcc-aarch64-linux-gnu
           sudo apt install -y gcc-arm-linux-gnueabi
           sudo apt install -y libyaml-dev
+     
       - name: Clone Proton Clang
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git $HOME/proton
 
@@ -35,6 +36,7 @@ jobs:
           grep "SUSFS_VERSION" susfs/kernel_patches/include/linux/susfs.h
           echo "=== Verifikasi 3 file ada ==="
           ls -la susfs/kernel_patches/fs/susfs.c susfs/kernel_patches/include/linux/susfs.h susfs/kernel_patches/include/linux/susfs_def.h
+     
       - name: Configure AnyKernel3
         run: |
           cd AnyKernel3
@@ -76,6 +78,7 @@ jobs:
           # Stub path_umount untuk kernel 4.14
           echo 'int path_umount(struct path *path, int flags) { return 0; }' >> fs/namespace.c
           cd ..
+     
       - name: Grep KernelSU Hooks
         run: |
           cd kernel
@@ -88,7 +91,6 @@ jobs:
           echo "=== Cari semua ksu_* ==="
           grep -R "ksu_" -n drivers/staging/kernelsu core fs drivers/input || true
 
-      
       - name: Inject manual hook ke kernel/reboot.c (required by KSUN 3.2.0 Kbuild check)
         run: |
           cd kernel
@@ -105,6 +107,15 @@ jobs:
             echo "=== Hook sudah ada ==="
           fi
           cd ..
+      
+      - name: Debug isi fs/open.c dan fs/read_write.c
+        run: |
+          cd kernel
+          echo "=== fs/open.c: cari fungsi do_faccessat ==="
+          grep -n -A 15 "do_faccessat" fs/open.c
+          echo ""
+          echo "=== fs/read_write.c: cari fungsi vfs_read ==="
+          grep -n -A 15 "^ssize_t vfs_read" fs/read_write.c
       
       - name: Inject manual hook ke exec.c, input.c, devpts (WAJIB buat root beneran jalan)
         run: |
