@@ -232,12 +232,20 @@ def patch_open(path: Path):
         return
 
     old_sig = (
-        "long do_faccessat(int dfd, const char __user *filename, int mode)\n"
+        "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
         "{\n"
         "\tconst struct cred *old_cred;\n"
+        "\tstruct cred *override_cred;\n"
+        "\tstruct path path;\n"
+        "\tstruct inode *inode;\n"
+        "\tstruct vfsmount *mnt;\n"
+        "\tint res;\n"
+        "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+        "\n"
+        "\tif (mode & ~S_IRWXO)"
     )
     if old_sig not in content:
-        print("GAGAL: pattern do_faccessat tidak ditemukan persis di open.c")
+        print("GAGAL: pattern SYSCALL_DEFINE3(faccessat tidak ditemukan persis di open.c")
         sys.exit(1)
 
     extern_block = (
@@ -249,12 +257,21 @@ def patch_open(path: Path):
 
     new_sig = (
         extern_block +
-        "long do_faccessat(int dfd, const char __user *filename, int mode)\n"
+        "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
         "{\n"
+        "\tconst struct cred *old_cred;\n"
+        "\tstruct cred *override_cred;\n"
+        "\tstruct path path;\n"
+        "\tstruct inode *inode;\n"
+        "\tstruct vfsmount *mnt;\n"
+        "\tint res;\n"
+        "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+        "\n"
         "#ifdef CONFIG_KSU\n"
         "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
         "#endif\n"
-        "\tconst struct cred *old_cred;\n"
+        "\n"
+        "\tif (mode & ~S_IRWXO)"
     )
 
     content = content.replace(old_sig, new_sig)
