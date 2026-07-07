@@ -175,6 +175,28 @@ jobs:
           cd kernel
           sed -n '1,35p' KernelSU/kernel/Kbuild
       
+      - name: Cek apakah supercall.o beneran ter-compile saat build
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export LLVM=1
+          export CC=clang
+          export AR=llvm-ar
+          export LD=ld.lld
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          
+          make O=out ARCH=arm64 cepheus_defconfig
+          make ARCH=arm64 O=out CC=clang AR=llvm-ar LD=ld.lld NM=llvm-nm \
+               OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+               -j$(nproc --all) KernelSU/kernel/supercall/supercall.o 2>&1 | tail -50
+          
+          echo "=== Cek apakah file .o hasil compile ada ==="
+          find out -name "supercall.o" -o -name "*.o" -path "*supercall*"
+      
       - name: Build kernel
         run: |
           cd kernel
