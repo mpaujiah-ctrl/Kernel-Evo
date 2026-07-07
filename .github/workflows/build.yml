@@ -144,6 +144,11 @@ jobs:
           echo "=== Cari baris 'supercall' di Kbuild ==="
           grep -n "supercall" KernelSU/kernel/Kbuild || echo "TIDAK ADA baris supercall di Kbuild sama sekali!"
       
+      - name: Cek isi fungsi ksu_handle_sys_reboot di supercall.c
+        run: |
+          cd kernel
+          grep -n -B 10 "ksu_handle_sys_reboot" KernelSU/kernel/supercall/supercall.c
+      
       - name: Build kernel
         run: |
           cd kernel
