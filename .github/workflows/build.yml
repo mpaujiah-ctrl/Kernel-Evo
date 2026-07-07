@@ -119,6 +119,18 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
+      - name: Cek wiring KernelSU ke build system (root Kbuild/Makefile)
+        run: |
+          cd kernel
+          echo "=== Cari referensi 'KernelSU' di Kbuild/Makefile root ==="
+          grep -rn "KernelSU" Kbuild Makefile 2>/dev/null
+          echo ""
+          echo "=== Isi KernelSU/kernel/Kbuild (file apa aja yang di-compile) ==="
+          cat KernelSU/kernel/Kbuild
+          echo ""
+          echo "=== Cari implementasi asli ksu_handle_sys_reboot ==="
+          grep -rln "ksu_handle_sys_reboot" KernelSU/kernel/
+      
       - name: Build kernel
         run: |
           cd kernel
