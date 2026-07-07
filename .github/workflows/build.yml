@@ -161,6 +161,15 @@ jobs:
           echo "=== Cek define KSU_KPROBES_HOOK vs alternatifnya di source ==="
           grep -rn "ifdef.*HOOK\|ifndef.*HOOK" KernelSU/kernel/supercall/supercall.c
       
+      - name: Lihat FULL isi Kbuild (bagian tengah yang belum pernah dicek)
+        run: |
+          cd kernel
+          echo "=== Baris 30-120 ==="
+          sed -n '30,120p' KernelSU/kernel/Kbuild
+          echo ""
+          echo "=== Baris 120-220 ==="
+          sed -n '120,220p' KernelSU/kernel/Kbuild
+      
       - name: Build kernel
         run: |
           cd kernel
