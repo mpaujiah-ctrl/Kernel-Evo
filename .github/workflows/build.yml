@@ -123,13 +123,19 @@ jobs:
         run: |
           cd kernel
           echo "=== Cari referensi 'KernelSU' di Kbuild/Makefile root ==="
-          grep -rn "KernelSU" Kbuild Makefile 2>/dev/null
+          grep -rn "KernelSU" Kbuild Makefile 2>/dev/null || echo "TIDAK DITEMUKAN di Kbuild/Makefile root"
+          echo ""
+          echo "=== Cari juga di drivers/Makefile dan drivers/Kconfig ==="
+          grep -rn "KernelSU" drivers/Makefile drivers/Kconfig 2>/dev/null || echo "TIDAK DITEMUKAN di drivers/Makefile atau Kconfig"
           echo ""
           echo "=== Isi KernelSU/kernel/Kbuild (file apa aja yang di-compile) ==="
-          cat KernelSU/kernel/Kbuild
+          cat KernelSU/kernel/Kbuild || echo "File Kbuild tidak ada"
           echo ""
           echo "=== Cari implementasi asli ksu_handle_sys_reboot ==="
-          grep -rln "ksu_handle_sys_reboot" KernelSU/kernel/
+          grep -rln "ksu_handle_sys_reboot" KernelSU/kernel/ || echo "TIDAK DITEMUKAN implementasinya di source KernelSU"
+          echo ""
+          echo "=== Cek CONFIG_KSU di config hasil build (out/.config) ==="
+          grep "CONFIG_KSU" out/.config 2>/dev/null || echo "out/.config belum ada / CONFIG_KSU tidak diset"
       
       - name: Build kernel
         run: |
