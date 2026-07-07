@@ -3,21 +3,14 @@
 inject_ksu_hooks.py
 
 Inject hook manual KernelSU-Next ke titik-titik yang dibutuhkan buat
-fungsi root beneran jalan (bukan cuma lolos Kbuild check reboot.c).
+fungsi root beneran jalan.
 
 Dipanggil terpisah untuk tiap file:
     python3 inject_ksu_hooks.py exec       kernel/fs/exec.c
     python3 inject_ksu_hooks.py input      kernel/drivers/input/input.c
     python3 inject_ksu_hooks.py devpts     kernel/fs/devpts/inode.c
-
-Kenapa pakai Python bukan sed multi-baris:
-sed dengan insert multi-baris gampang meleset kalau ada perbedaan kecil
-di source (indentasi, versi kernel, dst) - kalau pattern-nya gak ketemu
-persis, sed diam-diam gak insert apa-apa tanpa error (persis kejadian
-bug 'endmenu' sebelumnya). Python di sini melakukan exact string match
-dan akan MENGGAGALKAN proses build (exit 1) kalau pattern tidak
-ditemukan, jadi kalau source-nya beda struktur, ketahuan langsung
-di CI - bukan baru ketahuan pas testing di HP.
+    python3 inject_ksu_hooks.py open       kernel/fs/open.c
+    python3 inject_ksu_hooks.py read_write kernel/fs/read_write.c
 """
 
 import sys
@@ -31,7 +24,6 @@ def patch_exec(path: Path):
         print("=== exec.c: hook sudah ada, skip ===")
         return
 
-    # 1. extern declarations, sebelum definisi fungsi
     old_sig = (
         "static int do_execveat_common(int fd, struct filename *filename,\n"
         "\t\t\t      struct user_arg_ptr argv,\n"
@@ -87,6 +79,7 @@ def patch_exec(path: Path):
     content = content.replace(old_sig, new_sig)
     path.write_text(content)
     print("=== exec.c: hook berhasil di-inject ===")
+
 
 def patch_input(path: Path):
     marker = "ksu_handle_input_handle_event"
@@ -177,6 +170,86 @@ def patch_devpts(path: Path):
     path.write_text(content)
     print("=== inode.c: hook berhasil di-inject ===")
 
+
+def patch_open(path: Path):
+    marker = "ksu_handle_faccessat"
+    content = path.read_text()
+    if marker in content:
+        print("=== open.c: hook sudah ada, skip ===")
+        return
+
+    # Coba pola do_faccessat dulu (kernel generik)
+    old_sig_generic = (
+        "long do_faccessat(int dfd, const char __user *filename, int mode)\n"
+        "{\n"
+        "\tconst struct cred *old_cred;\n"
+    )
+    # Fallback: pola SYSCALL_DEFINE3 langsung (kayak yang ketemu di DRAGON)
+    old_sig_syscall = (
+        "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+        "{\n"
+        "\tconst struct cred *old_cred;\n"
+        "\tstruct cred *override_cred;\n"
+        "\tstruct path path;\n"
+        "\tstruct inode *inode;\n"
+        "\tstruct vfsmount *mnt;\n"
+        "\tint res;\n"
+        "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+        "\n"
+        "\tif (mode & ~S_IRWXO)"
+    )
+
+    extern_block = (
+        "#ifdef CONFIG_KSU\n"
+        "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n"
+        "\t\t\t\t int *mode, int *flags);\n"
+        "#endif\n"
+    )
+
+    if old_sig_generic in content:
+        new_sig = (
+            extern_block +
+            "long do_faccessat(int dfd, const char __user *filename, int mode)\n"
+            "{\n"
+            "#ifdef CONFIG_KSU\n"
+            "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
+            "#endif\n"
+            "\tconst struct cred *old_cred;\n"
+        )
+        content = content.replace(old_sig_generic, new_sig)
+        path.write_text(content)
+        print("=== open.c: hook berhasil di-inject (pola do_faccessat) ===")
+        return
+
+    if old_sig_syscall in content:
+        new_sig = (
+            extern_block +
+            "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+            "{\n"
+            "\tconst struct cred *old_cred;\n"
+            "\tstruct cred *override_cred;\n"
+            "\tstruct path path;\n"
+            "\tstruct inode *inode;\n"
+            "\tstruct vfsmount *mnt;\n"
+            "\tint res;\n"
+            "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+            "\n"
+            "#ifdef CONFIG_KSU\n"
+            "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
+            "#endif\n"
+            "\n"
+            "\tif (mode & ~S_IRWXO)"
+        )
+        content = content.replace(old_sig_syscall, new_sig)
+        path.write_text(content)
+        print("=== open.c: hook berhasil di-inject (pola SYSCALL_DEFINE3) ===")
+        return
+
+    print("GAGAL: kedua pattern (do_faccessat & SYSCALL_DEFINE3) tidak ditemukan di open.c")
+    print("Perlu cek manual struktur asli file ini.")
+    sys.exit(1)
+
+
 def patch_read_write(path: Path):
     marker = "ksu_handle_vfs_read"
     content = path.read_text()
@@ -224,110 +297,10 @@ def patch_read_write(path: Path):
     path.write_text(content)
     print("=== read_write.c: hook berhasil di-inject ===")
 
-def patch_open(path: Path):
-    marker = "ksu_handle_faccessat"
-    content = path.read_text()
-    if marker in content:
-        print("=== open.c: hook sudah ada, skip ===")
-        return
-
-    old_sig = (
-        "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-        "{\n"
-        "\tconst struct cred *old_cred;\n"
-        "\tstruct cred *override_cred;\n"
-        "\tstruct path path;\n"
-        "\tstruct inode *inode;\n"
-        "\tstruct vfsmount *mnt;\n"
-        "\tint res;\n"
-        "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
-        "\n"
-        "\tif (mode & ~S_IRWXO)"
-    )
-    if old_sig not in content:
-        print("GAGAL: pattern SYSCALL_DEFINE3(faccessat tidak ditemukan persis di open.c")
-        sys.exit(1)
-
-    extern_block = (
-        "#ifdef CONFIG_KSU\n"
-        "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n"
-        "\t\t\t\t int *mode, int *flags);\n"
-        "#endif\n"
-    )
-
-    new_sig = (
-        extern_block +
-        "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-        "{\n"
-        "\tconst struct cred *old_cred;\n"
-        "\tstruct cred *override_cred;\n"
-        "\tstruct path path;\n"
-        "\tstruct inode *inode;\n"
-        "\tstruct vfsmount *mnt;\n"
-        "\tint res;\n"
-        "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
-        "\n"
-        "#ifdef CONFIG_KSU\n"
-        "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
-        "#endif\n"
-        "\n"
-        "\tif (mode & ~S_IRWXO)"
-    )
-
-    content = content.replace(old_sig, new_sig)
-    path.write_text(content)
-    print("=== open.c: hook berhasil di-inject ===")
-
-
-def patch_read_write(path: Path):
-    marker = "ksu_handle_vfs_read"
-    content = path.read_text()
-    if marker in content:
-        print("=== read_write.c: hook sudah ada, skip ===")
-        return
-
-    old_sig = (
-        "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n"
-        "{\n"
-        "\tssize_t ret;\n"
-        "\n"
-        "\tif (!(file->f_mode & FMODE_READ))\n"
-        "\t\treturn -EBADF;"
-    )
-    if old_sig not in content:
-        print("GAGAL: pattern vfs_read tidak ditemukan persis di read_write.c")
-        sys.exit(1)
-
-    extern_block = (
-        "#ifdef CONFIG_KSU\n"
-        "extern bool ksu_vfs_read_hook __read_mostly;\n"
-        "extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,\n"
-        "\t\t\t\tsize_t *count_ptr, loff_t **pos);\n"
-        "#endif\n"
-    )
-
-    new_sig = (
-        extern_block +
-        "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n"
-        "{\n"
-        "\tssize_t ret;\n"
-        "\n"
-        "#ifdef CONFIG_KSU\n"
-        "\tif (unlikely(ksu_vfs_read_hook))\n"
-        "\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n"
-        "#endif\n"
-        "\n"
-        "\tif (!(file->f_mode & FMODE_READ))\n"
-        "\t\treturn -EBADF;"
-    )
-
-    content = content.replace(old_sig, new_sig)
-    path.write_text(content)
-    print("=== read_write.c: hook berhasil di-inject ===")
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: inject_ksu_hooks.py <exec|input|devpts> <path-to-file>")
+        print("Usage: inject_ksu_hooks.py <exec|input|devpts|open|read_write> <path-to-file>")
         sys.exit(1)
 
     target, filepath = sys.argv[1], Path(sys.argv[2])
