@@ -51,6 +51,15 @@ jobs:
           grep -n "ksu_handle_faccessat" fs/open.c || echo "Konfirmasi: belum ada hook faccessat"
           grep -n "ksu_handle_vfs_read" fs/read_write.c || echo "Konfirmasi: belum ada hook vfs_read"
 
+      - name: Debug struktur asli fs/exec.c
+        run: |
+          cd kernel
+          echo "=== Cari do_execveat_common ==="
+          grep -n -A 15 "do_execveat_common" fs/exec.c || echo "TIDAK DITEMUKAN sama sekali, mungkin nama fungsi beda"
+          echo ""
+          echo "=== Kalau gak ada, cari alternatif nama fungsi exec ==="
+          grep -n "^static int do_execve\|^int do_execve\|SYSCALL_DEFINE3(execve" fs/exec.c
+      
       - name: Inject manual hook ke exec.c, input.c, devpts, open.c, read_write.c
         run: |
           cd kernel
