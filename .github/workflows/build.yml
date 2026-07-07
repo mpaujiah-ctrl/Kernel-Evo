@@ -119,7 +119,6 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
       
-      
       - name: Cek wiring KernelSU ke build system (root Kbuild/Makefile)
         run: |
           cd kernel
@@ -148,6 +147,19 @@ jobs:
         run: |
           cd kernel
           grep -n -B 10 "ksu_handle_sys_reboot" KernelSU/kernel/supercall/supercall.c
+      
+      - name: Cek isi lengkap fungsi + Kconfig terkait supercall
+        run: |
+          cd kernel
+          echo "=== 30 baris SETELAH definisi ksu_handle_sys_reboot ==="
+          sed -n '76,106p' KernelSU/kernel/supercall/supercall.c
+          echo ""
+          echo "=== Cari semua CONFIG_KSU_SUPERCALL atau sejenisnya di Kconfig ==="
+          grep -rn "SUPERCALL" KernelSU/kernel/Kconfig 2>/dev/null || echo "Tidak ada di Kconfig utama"
+          grep -rln "SUPERCALL" KernelSU/kernel/ 2>/dev/null
+          echo ""
+          echo "=== Cek define KSU_KPROBES_HOOK vs alternatifnya di source ==="
+          grep -rn "ifdef.*HOOK\|ifndef.*HOOK" KernelSU/kernel/supercall/supercall.c
       
       - name: Build kernel
         run: |
