@@ -119,6 +119,17 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
+      - name: Fix Kbuild - pastikan supercall.o ikut ter-compile
+        run: |
+          cd kernel
+          if ! grep -q "supercall/supercall.o" KernelSU/kernel/Kbuild; then
+            sed -i '/kernelsu-objs += extras.o/a kernelsu-objs += supercall/supercall.o' KernelSU/kernel/Kbuild
+            echo "=== Baris supercall.o ditambahkan ==="
+          else
+            echo "=== Sudah ada, skip ==="
+          fi
+          grep -n "supercall" KernelSU/kernel/Kbuild
+      
       - name: Cek wiring KernelSU ke build system (root Kbuild/Makefile)
         run: |
           cd kernel
