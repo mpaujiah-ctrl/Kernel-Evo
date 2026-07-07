@@ -24,3 +24,26 @@ jobs:
       - name: Cek isi kernel (kalau clone berhasil)
         run: |
           cd kernel 2>/dev/null && ls -la || echo "Folder kernel kosong/gagal clone"
+
+      - name: Cek build.sh dan build.config (skema build apa yang dipakai)
+        run: |
+          cd kernel
+          echo "=== isi build.sh ==="
+          cat build.sh
+          echo "=== isi build.config.common ==="
+          cat build.config.common
+          echo "=== isi build.config.aarch64 ==="
+          cat build.config.aarch64
+
+      - name: Cek folder KernelSU
+        run: |
+          cd kernel
+          ls -la KernelSU/
+          find KernelSU -iname "*.h" | xargs grep -l "KSU_VERSION" 2>/dev/null | head -3
+
+      - name: Cek hook manual (pola sama seperti kemarin)
+        run: |
+          cd kernel
+          grep -n "ksu_handle_execveat" fs/exec.c || echo "TIDAK ADA hook execveat"
+          grep -n "ksu_handle_faccessat" fs/open.c || echo "TIDAK ADA hook faccessat"
+          grep -n "ksu_handle_vfs_read" fs/read_write.c || echo "TIDAK ADA hook vfs_read"
