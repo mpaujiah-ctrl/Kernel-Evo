@@ -170,6 +170,11 @@ jobs:
           echo "=== Baris 120-220 ==="
           sed -n '120,220p' KernelSU/kernel/Kbuild
       
+      - name: Lihat baris 1-35 Kbuild (paling awal, belum pernah dicek)
+        run: |
+          cd kernel
+          sed -n '1,35p' KernelSU/kernel/Kbuild
+      
       - name: Build kernel
         run: |
           cd kernel
