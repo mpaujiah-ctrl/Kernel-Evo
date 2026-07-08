@@ -175,6 +175,11 @@ jobs:
           cd kernel
           sed -n '1,35p' KernelSU/kernel/Kbuild
       
+      - name: Cek isi lengkap folder supercall
+        run: |
+          cd kernel
+          ls -la KernelSU/kernel/supercall/
+      
       - name: Cek apakah supercall.o beneran ter-compile saat build
         run: |
           cd kernel
