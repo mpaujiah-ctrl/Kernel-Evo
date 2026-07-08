@@ -118,6 +118,23 @@ jobs:
           cat KernelSU/kernel/supercall/Makefile
           ls -la KernelSU/kernel/supercall/
       
+      - name: Debug - cek symbol di supercall.o setelah build gagal
+        run: |
+          cd kernel
+          echo "=== Cari file supercall.o hasil compile ==="
+          find out -name "supercall.o"
+          echo ""
+          echo "=== Cek symbol ksu_handle_sys_reboot di dalam .o itu (kalau ada) ==="
+          find out -name "supercall.o" -exec llvm-nm {} \; | grep -i reboot || echo "Symbol TIDAK ADA di supercall.o"
+          echo ""
+          echo "=== Cek juga isi built-in.o yang menampung supercall.o ==="
+          find out -path "*supercall*built-in.o" -exec llvm-nm {} \; 2>/dev/null | grep -i reboot || echo "Symbol TIDAK ADA di built-in.o juga"
+      
+      - name: Cek apakah ada 'obj-y' atau referensi subdir supercall di Kbuild induk
+        run: |
+          cd kernel
+          grep -n "supercall\|obj-y\|obj-\$" KernelSU/kernel/Kbuild | head -20
+      
       - name: Build kernel
         run: |
           cd kernel
