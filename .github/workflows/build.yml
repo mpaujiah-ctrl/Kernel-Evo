@@ -117,15 +117,15 @@ jobs:
           struct dt_info;
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
-      
-      - name: Fix - buat Makefile untuk folder supercall yang hilang
+
+      - name: Fix - buat Kbuild (bukan Makefile) untuk folder supercall yang hilang
         run: |
           cd kernel
-          echo "obj-y += dispatch.o perm.o supercall.o" > KernelSU/kernel/supercall/Makefile
-          echo "=== Makefile berhasil dibuat ==="
-          cat KernelSU/kernel/supercall/Makefile
+          echo "obj-y += dispatch.o perm.o supercall.o" > KernelSU/kernel/supercall/Kbuild
+          echo "=== Kbuild berhasil dibuat ==="
+          cat KernelSU/kernel/supercall/Kbuild
           ls -la KernelSU/kernel/supercall/
-                  
+      
       - name: Build kernel
         continue-on-error: true
         run: |
