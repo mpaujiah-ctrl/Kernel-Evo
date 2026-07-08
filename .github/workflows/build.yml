@@ -26,6 +26,7 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/|block=/dev/block/bootdevice/by-name/|' anykernel.sh
           grep -E "devicecheck|block=" anykernel.sh | head -10
+      
       - name: Upgrade KernelSU ke KSUN 3.2.0 (commit sama yang dipakai raystef66)
         run: |
           cd kernel
@@ -35,17 +36,20 @@ jobs:
           tar -xzf ksun.tar.gz -C KernelSU --strip-components=1
           rm ksun.tar.gz
           ls KernelSU/kernel/
+      
       - name: Fix KSU_VERSION fallback (karena pakai tarball, bukan git clone)
         run: |
           cd kernel
           sed -i 's/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := 33129/' KernelSU/kernel/Kbuild
           grep "KSU_VERSION_FALLBACK" KernelSU/kernel/Kbuild
+      
       - name: Cek hook manual (harusnya kosong semua, konfirmasi dari recon)
         run: |
           cd kernel
           grep -n "ksu_handle_execveat" fs/exec.c || echo "Konfirmasi: belum ada hook execveat"
           grep -n "ksu_handle_faccessat" fs/open.c || echo "Konfirmasi: belum ada hook faccessat"
           grep -n "ksu_handle_vfs_read" fs/read_write.c || echo "Konfirmasi: belum ada hook vfs_read"
+      
       - name: Debug struktur asli fs/exec.c
         run: |
           cd kernel
@@ -63,6 +67,7 @@ jobs:
           python3 ../.github/scripts/inject_ksu_hooks.py devpts fs/devpts/inode.c
           python3 ../.github/scripts/inject_ksu_hooks.py open fs/open.c
           python3 ../.github/scripts/inject_ksu_hooks.py read_write fs/read_write.c
+      
       - name: Inject manual hook ke kernel/reboot.c (required by KSUN 3.2.0 Kbuild check)
         run: |
           cd kernel
@@ -73,6 +78,7 @@ jobs:
           else
             echo "=== Hook sudah ada ==="
           fi
+      
       - name: Sinkronkan SUSFS v2.1.0 + stat.c + task_mmu.c
         run: |
           cd kernel
@@ -83,6 +89,7 @@ jobs:
           curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/proc/task_mmu.c" -o fs/proc/task_mmu.c
           grep "SUSFS_VERSION" include/linux/susfs.h
           grep -q "susfs.o" fs/Makefile || echo 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' >> fs/Makefile
+      
       - name: Setup defconfig KSUN + SUSFS
         run: |
           echo "CONFIG_KSU=y" >> kernel/arch/arm64/configs/cepheus_defconfig
@@ -100,6 +107,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
           echo 'CONFIG_LOCALVERSION="-EvoX_cepheus_v3.2.0_KSUN"' >> kernel/arch/arm64/configs/cepheus_defconfig
+      
       - name: Fix yamltree.c (stub kosong)
         run: |
           cd kernel
@@ -117,39 +125,9 @@ jobs:
           echo "=== Makefile berhasil dibuat ==="
           cat KernelSU/kernel/supercall/Makefile
           ls -la KernelSU/kernel/supercall/
-      
-      - name: Debug - cek symbol di supercall.o setelah build gagal
-        run: |
-          cd kernel
-          echo "=== Cari file supercall.o hasil compile ==="
-          find out -name "supercall.o"
-          echo ""
-          echo "=== Cek symbol ksu_handle_sys_reboot di dalam .o itu (kalau ada) ==="
-          find out -name "supercall.o" -exec llvm-nm {} \; | grep -i reboot || echo "Symbol TIDAK ADA di supercall.o"
-          echo ""
-          echo "=== Cek juga isi built-in.o yang menampung supercall.o ==="
-          find out -path "*supercall*built-in.o" -exec llvm-nm {} \; 2>/dev/null | grep -i reboot || echo "Symbol TIDAK ADA di built-in.o juga"
-      
-      - name: Cek apakah ada 'obj-y' atau referensi subdir supercall di Kbuild induk
-        run: |
-          cd kernel
-          grep -n "supercall\|obj-y\|obj-\$" KernelSU/kernel/Kbuild | head -20
-      
-      - name: Cari SEMUA baris compile yang menyinggung supercall (dari log build)
-        run: |
-          cd kernel
-          echo "=== Cek apakah ada proses CC/AR untuk supercall di build sebelumnya ==="
-          find out -path "*supercall*" 2>/dev/null
-          echo ""
-          echo "=== Coba compile ulang HANYA folder supercall, verbose ==="
-          export ARCH=arm64
-          export LLVM=1
-          export CC=clang
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make ARCH=arm64 O=out CC=clang LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- \
-               V=1 KernelSU/kernel/supercall/ 2>&1 | tail -40
-      
+                  
       - name: Build kernel
+        continue-on-error: true
         run: |
           cd kernel
           export ARCH=arm64
@@ -162,7 +140,9 @@ jobs:
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
           export CROSS_COMPILE=aarch64-linux-gnu-
+
           make O=out ARCH=arm64 cepheus_defconfig
+
           make ARCH=arm64 \
                O=out \
                CC=clang \
@@ -172,8 +152,17 @@ jobs:
                OBJCOPY=llvm-objcopy \
                OBJDUMP=llvm-objdump \
                STRIP=llvm-strip \
-               -j$(nproc --all) Image.gz-dtb
-          ls out/arch/arm64/boot/Image.gz-dtb
+               -j$(nproc --all) Image.gz-dtb 2>&1 | tee ../build_full.log
+
+      - name: Debug - analisa log build penuh soal supercall
+        if: always()
+        run: |
+          echo "=== Semua baris yang menyinggung 'supercall' di log build PENUH ==="
+          grep -i "supercall" build_full.log || echo "TIDAK ADA baris 'supercall' SAMA SEKALI di log build!"
+          echo ""
+          echo "=== Cek juga apakah folder KernelSU/kernel/ (tanpa supercall) ke-compile normal ==="
+          grep "CC.*KernelSU/kernel/core\|CC.*KernelSU/kernel/hook" build_full.log | head -5
+      
       - name: Pack AnyKernel3
         run: |
           cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
