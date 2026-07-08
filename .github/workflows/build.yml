@@ -163,6 +163,12 @@ jobs:
           echo "=== Cek juga apakah folder KernelSU/kernel/ (tanpa supercall) ke-compile normal ==="
           grep "CC.*KernelSU/kernel/core\|CC.*KernelSU/kernel/hook" build_full.log | head -5
       
+      - name: Debug - lihat akhir log build (baris error asli)
+        if: always()
+        run: |
+          echo "=== 40 baris TERAKHIR dari log build (di sinilah error sebenarnya) ==="
+          tail -40 build_full.log
+      
       - name: Pack AnyKernel3
         run: |
           cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
