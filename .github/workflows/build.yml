@@ -135,6 +135,20 @@ jobs:
           cd kernel
           grep -n "supercall\|obj-y\|obj-\$" KernelSU/kernel/Kbuild | head -20
       
+      - name: Cari SEMUA baris compile yang menyinggung supercall (dari log build)
+        run: |
+          cd kernel
+          echo "=== Cek apakah ada proses CC/AR untuk supercall di build sebelumnya ==="
+          find out -path "*supercall*" 2>/dev/null
+          echo ""
+          echo "=== Coba compile ulang HANYA folder supercall, verbose ==="
+          export ARCH=arm64
+          export LLVM=1
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make ARCH=arm64 O=out CC=clang LLVM=1 CROSS_COMPILE=aarch64-linux-gnu- \
+               V=1 KernelSU/kernel/supercall/ 2>&1 | tail -40
+      
       - name: Build kernel
         run: |
           cd kernel
