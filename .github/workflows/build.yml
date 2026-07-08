@@ -110,88 +110,13 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
       
-      - name: Cek wiring KernelSU ke build system (root Kbuild/Makefile)
+      - name: Fix - buat Makefile untuk folder supercall yang hilang
         run: |
           cd kernel
-          echo "=== Cari referensi 'KernelSU' di Kbuild/Makefile root ==="
-          grep -rn "KernelSU" Kbuild Makefile 2>/dev/null || echo "TIDAK DITEMUKAN di Kbuild/Makefile root"
-          echo ""
-          echo "=== Cari juga di drivers/Makefile dan drivers/Kconfig ==="
-          grep -rn "KernelSU" drivers/Makefile drivers/Kconfig 2>/dev/null || echo "TIDAK DITEMUKAN di drivers/Makefile atau Kconfig"
-          echo ""
-          echo "=== Isi KernelSU/kernel/Kbuild (file apa aja yang di-compile) ==="
-          cat KernelSU/kernel/Kbuild || echo "File Kbuild tidak ada"
-          echo ""
-          echo "=== Cari implementasi asli ksu_handle_sys_reboot ==="
-          grep -rln "ksu_handle_sys_reboot" KernelSU/kernel/ || echo "TIDAK DITEMUKAN implementasinya di source KernelSU"
-          echo ""
-          echo "=== Cek CONFIG_KSU di config hasil build (out/.config) ==="
-          grep "CONFIG_KSU" out/.config 2>/dev/null || echo "out/.config belum ada / CONFIG_KSU tidak diset"
-      
-      - name: Cek apakah supercall.o terdaftar di Kbuild
-        run: |
-          cd kernel
-          echo "=== Cari baris 'supercall' di Kbuild ==="
-          grep -n "supercall" KernelSU/kernel/Kbuild || echo "TIDAK ADA baris supercall di Kbuild sama sekali!"
-      
-      - name: Cek isi fungsi ksu_handle_sys_reboot di supercall.c
-        run: |
-          cd kernel
-          grep -n -B 10 "ksu_handle_sys_reboot" KernelSU/kernel/supercall/supercall.c
-      
-      - name: Cek isi lengkap fungsi + Kconfig terkait supercall
-        run: |
-          cd kernel
-          echo "=== 30 baris SETELAH definisi ksu_handle_sys_reboot ==="
-          sed -n '76,106p' KernelSU/kernel/supercall/supercall.c
-          echo ""
-          echo "=== Cari semua CONFIG_KSU_SUPERCALL atau sejenisnya di Kconfig ==="
-          grep -rn "SUPERCALL" KernelSU/kernel/Kconfig 2>/dev/null || echo "Tidak ada di Kconfig utama"
-          grep -rln "SUPERCALL" KernelSU/kernel/ 2>/dev/null
-          echo ""
-          echo "=== Cek define KSU_KPROBES_HOOK vs alternatifnya di source ==="
-          grep -rn "ifdef.*HOOK\|ifndef.*HOOK" KernelSU/kernel/supercall/supercall.c
-      
-      - name: Lihat FULL isi Kbuild (bagian tengah yang belum pernah dicek)
-        run: |
-          cd kernel
-          echo "=== Baris 30-120 ==="
-          sed -n '30,120p' KernelSU/kernel/Kbuild
-          echo ""
-          echo "=== Baris 120-220 ==="
-          sed -n '120,220p' KernelSU/kernel/Kbuild
-      
-      - name: Lihat baris 1-35 Kbuild (paling awal, belum pernah dicek)
-        run: |
-          cd kernel
-          sed -n '1,35p' KernelSU/kernel/Kbuild
-      
-      - name: Cek isi lengkap folder supercall
-        run: |
-          cd kernel
+          echo "obj-y += dispatch.o perm.o supercall.o" > KernelSU/kernel/supercall/Makefile
+          echo "=== Makefile berhasil dibuat ==="
+          cat KernelSU/kernel/supercall/Makefile
           ls -la KernelSU/kernel/supercall/
-      
-      - name: Cek apakah supercall.o beneran ter-compile saat build
-        run: |
-          cd kernel
-          export ARCH=arm64
-          export LLVM=1
-          export CC=clang
-          export AR=llvm-ar
-          export LD=ld.lld
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          
-          make O=out ARCH=arm64 cepheus_defconfig
-          make ARCH=arm64 O=out CC=clang AR=llvm-ar LD=ld.lld NM=llvm-nm \
-               OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-               -j$(nproc --all) KernelSU/kernel/supercall/supercall.o 2>&1 | tail -50
-          
-          echo "=== Cek apakah file .o hasil compile ada ==="
-          find out -name "supercall.o" -o -name "*.o" -path "*supercall*"
       
       - name: Build kernel
         run: |
