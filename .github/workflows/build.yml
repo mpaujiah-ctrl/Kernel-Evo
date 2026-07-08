@@ -1,245 +1,141 @@
-name: Kernel Evolution X A15 - KSUN 3.2.0 + SUSFS v2
+name: Kernel Build Test (cepheus - vic, clean/no patch)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # bisa di-trigger manual dari tab Actions
+  push:
+    branches: [ main ]    # otomatis jalan tiap push ke branch main repo CI ini
+
+env:
+  KERNEL_REPO: https://github.com/Evolution-X-Devices/kernel_xiaomi_cepheus
+  KERNEL_BRANCH: vic
+  DEFCONFIG: cepheus_defconfig
+  ARCH: arm64
+  SUBARCH: arm64
+  CLANG_REPO: https://gitlab.com/jjpprrrr/prelude-clang.git
+  ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3
+  ANYKERNEL_BRANCH: master
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Install deps
+      - name: Free up disk space
         run: |
-          sudo apt update
-          sudo apt install -y bc bison flex libssl-dev libelf-dev build-essential git curl zip python3 gcc-aarch64-linux-gnu clang lld llvm
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
 
-      - name: Clone kernel source (Evolution-X-Devices, branch vic)
-        run: git clone --depth=1 -b vic https://github.com/Evolution-X-Devices/kernel_xiaomi_cepheus kernel
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev libelf-dev \
+            build-essential python3 python-is-python3 \
+            git curl zip unzip \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            ccache
+
+      - name: Clone kernel source (clean, no patch)
+        run: |
+          git clone --depth=1 -b "${KERNEL_BRANCH}" "${KERNEL_REPO}" kernel
+          cd kernel
+          echo "Commit yang dipakai:"
+          git log -1 --oneline
+
+      - name: Clone Clang toolchain
+        run: |
+          git clone --depth=1 "${CLANG_REPO}" clang
 
       - name: Clone AnyKernel3
-        run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+        run: |
+          git clone --depth=1 -b "${ANYKERNEL_BRANCH}" "${ANYKERNEL_REPO}" anykernel
 
-      - name: Configure AnyKernel3 (disable device check, fix block path)
+      - name: Configure anykernel.sh for cepheus (A/B slot device)
         run: |
-          cd AnyKernel3
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's|block=/dev/block/platform/omap/omap_hsmmc.0/by-name/|block=/dev/block/bootdevice/by-name/|' anykernel.sh
-          grep -E "devicecheck|block=" anykernel.sh | head -10
+          cd anykernel
+          sed -i 's/^BLOCK=.*/BLOCK=\/dev\/block\/bootdevice\/by-name\/boot;/' anykernel.sh
+          sed -i 's/^IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=1;/' anykernel.sh
+          sed -i "s/^kernel\.string=.*/kernel.string=Evolution-X cepheus vic (no patch, CI build)/" anykernel.sh
+          sed -i 's/^device\.name1=.*/device.name1=cepheus;/' anykernel.sh
+          echo "--- Cek hasil konfigurasi anykernel.sh ---"
+          grep -E "^(BLOCK|IS_SLOT_DEVICE|kernel.string|device.name1)=" anykernel.sh
 
-      - name: Upgrade KernelSU ke KSUN 3.2.0 (commit sama yang dipakai raystef66)
+      - name: Setup ccache
         run: |
-          cd kernel
-          rm -rf KernelSU
-          mkdir -p KernelSU
-          curl -sL "https://github.com/rifsxd/KernelSU-Next/archive/00cb93e0bc8bf3ca3680c7e8a3d7cf11d0b59071.tar.gz" -o ksun.tar.gz
-          tar -xzf ksun.tar.gz -C KernelSU --strip-components=1
-          rm ksun.tar.gz
-          ls KernelSU/kernel/
+          echo "CCACHE_DIR=${HOME}/.ccache" >> "$GITHUB_ENV"
+          mkdir -p "${HOME}/.ccache"
 
-      - name: Fix KSU_VERSION fallback (karena pakai tarball, bukan git clone)
-        run: |
-          cd kernel
-          sed -i 's/KSU_VERSION_FALLBACK := 1/KSU_VERSION_FALLBACK := 33129/' KernelSU/kernel/Kbuild
-          grep "KSU_VERSION_FALLBACK" KernelSU/kernel/Kbuild
+      - name: Cache ccache directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-cepheus-vic-${{ github.run_id }}
+          restore-keys: |
+            ccache-cepheus-vic-
 
-      - name: Cek hook manual (harusnya kosong semua, konfirmasi dari recon)
+      - name: Generate defconfig
+        working-directory: kernel
         run: |
-          cd kernel
-          grep -n "ksu_handle_execveat" fs/exec.c || echo "Konfirmasi: belum ada hook execveat"
-          grep -n "ksu_handle_faccessat" fs/open.c || echo "Konfirmasi: belum ada hook faccessat"
-          grep -n "ksu_handle_vfs_read" fs/read_write.c || echo "Konfirmasi: belum ada hook vfs_read"
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
+          make O=out \
+            ARCH=${ARCH} SUBARCH=${SUBARCH} \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            ${DEFCONFIG}
 
-      - name: Debug struktur asli fs/exec.c
+      - name: Build kernel (compile test)
+        working-directory: kernel
         run: |
-          cd kernel
-          echo "=== Cari do_execveat_common ==="
-          grep -n -A 15 "do_execveat_common" fs/exec.c || echo "TIDAK DITEMUKAN sama sekali, mungkin nama fungsi beda"
-          echo ""
-          echo "=== Kalau gak ada, cari alternatif nama fungsi exec ==="
-          grep -n "^static int do_execve\|^int do_execve\|SYSCALL_DEFINE3(execve" fs/exec.c
-      
-      - name: Inject manual hook ke exec.c, input.c, devpts, open.c, read_write.c
-        run: |
-          cd kernel
-          python3 ../.github/scripts/inject_ksu_hooks.py exec fs/exec.c
-          python3 ../.github/scripts/inject_ksu_hooks.py input drivers/input/input.c
-          python3 ../.github/scripts/inject_ksu_hooks.py devpts fs/devpts/inode.c
-          python3 ../.github/scripts/inject_ksu_hooks.py open fs/open.c
-          python3 ../.github/scripts/inject_ksu_hooks.py read_write fs/read_write.c
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:${PATH}"
+          make O=out -j"$(nproc)" \
+            ARCH=${ARCH} SUBARCH=${SUBARCH} \
+            CC="ccache clang" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            LD=ld.lld 2>&1 | tee out/build.log
 
-      - name: Inject manual hook ke kernel/reboot.c (required by KSUN 3.2.0 Kbuild check)
+      - name: Verify output image exists
+        working-directory: kernel
         run: |
-          cd kernel
-          if ! grep -q "ksu_handle_sys_reboot" kernel/reboot.c; then
-            sed -i '/^SYSCALL_DEFINE4(reboot/i extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg4);' kernel/reboot.c
-            sed -i '/if (magic1 != LINUX_REBOOT_MAGIC1/i \\tksu_handle_sys_reboot(magic1, magic2, cmd, (void __user **)&arg);' kernel/reboot.c
-            grep -n "ksu_handle_sys_reboot" kernel/reboot.c
+          IMG="out/arch/arm64/boot/Image.gz-dtb"
+          if [ -f "$IMG" ]; then
+            echo "BUILD OK: $IMG berhasil dibuat"
+            ls -la "$IMG"
           else
-            echo "=== Hook sudah ada ==="
+            echo "BUILD GAGAL: Image.gz-dtb tidak ditemukan"
+            echo "Cek out/build.log untuk detail error"
+            exit 1
           fi
 
-      - name: Sinkronkan SUSFS v2.1.0 + stat.c + task_mmu.c
-        run: |
-          cd kernel
-          curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/susfs.c" -o fs/susfs.c
-          curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/include/linux/susfs.h" -o include/linux/susfs.h
-          curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/include/linux/susfs_def.h" -o include/linux/susfs_def.h
-          curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/stat.c" -o fs/stat.c
-          curl -sL "https://raw.githubusercontent.com/raystef66/kernel_xiaomi_cepheus/16.0-ksun/fs/proc/task_mmu.c" -o fs/proc/task_mmu.c
-          grep "SUSFS_VERSION" include/linux/susfs.h
-          grep -q "susfs.o" fs/Makefile || echo 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' >> fs/Makefile
-
-      - name: Setup defconfig KSUN + SUSFS
-        run: |
-          echo "CONFIG_KSU=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_KPROBES_HOOK=n" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> kernel/arch/arm64/configs/cepheus_defconfig
-          echo 'CONFIG_LOCALVERSION="-EvoX_cepheus_v3.2.0_KSUN"' >> kernel/arch/arm64/configs/cepheus_defconfig
-
-      - name: Fix yamltree.c (stub kosong)
-        run: |
-          cd kernel
-          cat > scripts/dtc/yamltree.c << 'CEOF'
-          #include <stdio.h>
-          #include <stdlib.h>
-          struct dt_info;
-          void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
-          CEOF
-      
-      - name: Cek wiring KernelSU ke build system (root Kbuild/Makefile)
-        run: |
-          cd kernel
-          echo "=== Cari referensi 'KernelSU' di Kbuild/Makefile root ==="
-          grep -rn "KernelSU" Kbuild Makefile 2>/dev/null || echo "TIDAK DITEMUKAN di Kbuild/Makefile root"
-          echo ""
-          echo "=== Cari juga di drivers/Makefile dan drivers/Kconfig ==="
-          grep -rn "KernelSU" drivers/Makefile drivers/Kconfig 2>/dev/null || echo "TIDAK DITEMUKAN di drivers/Makefile atau Kconfig"
-          echo ""
-          echo "=== Isi KernelSU/kernel/Kbuild (file apa aja yang di-compile) ==="
-          cat KernelSU/kernel/Kbuild || echo "File Kbuild tidak ada"
-          echo ""
-          echo "=== Cari implementasi asli ksu_handle_sys_reboot ==="
-          grep -rln "ksu_handle_sys_reboot" KernelSU/kernel/ || echo "TIDAK DITEMUKAN implementasinya di source KernelSU"
-          echo ""
-          echo "=== Cek CONFIG_KSU di config hasil build (out/.config) ==="
-          grep "CONFIG_KSU" out/.config 2>/dev/null || echo "out/.config belum ada / CONFIG_KSU tidak diset"
-      
-      - name: Cek apakah supercall.o terdaftar di Kbuild
-        run: |
-          cd kernel
-          echo "=== Cari baris 'supercall' di Kbuild ==="
-          grep -n "supercall" KernelSU/kernel/Kbuild || echo "TIDAK ADA baris supercall di Kbuild sama sekali!"
-      
-      - name: Cek isi fungsi ksu_handle_sys_reboot di supercall.c
-        run: |
-          cd kernel
-          grep -n -B 10 "ksu_handle_sys_reboot" KernelSU/kernel/supercall/supercall.c
-      
-      - name: Cek isi lengkap fungsi + Kconfig terkait supercall
-        run: |
-          cd kernel
-          echo "=== 30 baris SETELAH definisi ksu_handle_sys_reboot ==="
-          sed -n '76,106p' KernelSU/kernel/supercall/supercall.c
-          echo ""
-          echo "=== Cari semua CONFIG_KSU_SUPERCALL atau sejenisnya di Kconfig ==="
-          grep -rn "SUPERCALL" KernelSU/kernel/Kconfig 2>/dev/null || echo "Tidak ada di Kconfig utama"
-          grep -rln "SUPERCALL" KernelSU/kernel/ 2>/dev/null
-          echo ""
-          echo "=== Cek define KSU_KPROBES_HOOK vs alternatifnya di source ==="
-          grep -rn "ifdef.*HOOK\|ifndef.*HOOK" KernelSU/kernel/supercall/supercall.c
-      
-      - name: Lihat FULL isi Kbuild (bagian tengah yang belum pernah dicek)
-        run: |
-          cd kernel
-          echo "=== Baris 30-120 ==="
-          sed -n '30,120p' KernelSU/kernel/Kbuild
-          echo ""
-          echo "=== Baris 120-220 ==="
-          sed -n '120,220p' KernelSU/kernel/Kbuild
-      
-      - name: Lihat baris 1-35 Kbuild (paling awal, belum pernah dicek)
-        run: |
-          cd kernel
-          sed -n '1,35p' KernelSU/kernel/Kbuild
-      
-      - name: Cek isi lengkap folder supercall
-        run: |
-          cd kernel
-          ls -la KernelSU/kernel/supercall/
-      
-      - name: Cek apakah supercall.o beneran ter-compile saat build
-        run: |
-          cd kernel
-          export ARCH=arm64
-          export LLVM=1
-          export CC=clang
-          export AR=llvm-ar
-          export LD=ld.lld
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          
-          make O=out ARCH=arm64 cepheus_defconfig
-          make ARCH=arm64 O=out CC=clang AR=llvm-ar LD=ld.lld NM=llvm-nm \
-               OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-               -j$(nproc --all) KernelSU/kernel/supercall/supercall.o 2>&1 | tail -50
-          
-          echo "=== Cek apakah file .o hasil compile ada ==="
-          find out -name "supercall.o" -o -name "*.o" -path "*supercall*"
-      
-      - name: Build kernel
-        run: |
-          cd kernel
-          export ARCH=arm64
-          export LLVM=1
-          export CC=clang
-          export AR=llvm-ar
-          export LD=ld.lld
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-          export CROSS_COMPILE=aarch64-linux-gnu-
-
-          make O=out ARCH=arm64 cepheus_defconfig
-
-          make ARCH=arm64 \
-               O=out \
-               CC=clang \
-               AR=llvm-ar \
-               LD=ld.lld \
-               NM=llvm-nm \
-               OBJCOPY=llvm-objcopy \
-               OBJDUMP=llvm-objdump \
-               STRIP=llvm-strip \
-               -j$(nproc --all) Image.gz-dtb
-
-          ls out/arch/arm64/boot/Image.gz-dtb
-
-      - name: Pack AnyKernel3
-        run: |
-          cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          cd AnyKernel3 && zip -r9 ../EvoX_cepheus_v3.2.0_KSUN.zip * -x README
-
-      - name: Upload artifact
+      - name: Upload build log (selalu, buat debug kalau gagal)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: EvoX-cepheus-v3.2.0-KSUN
-          path: |
-            EvoX_cepheus_v3.2.0_KSUN.zip
-            kernel/out/arch/arm64/boot/Image.gz-dtb
+          name: build-log
+          path: kernel/out/build.log
+          retention-days: 7
+
+      - name: Package flashable zip (AnyKernel3)
+        if: success()
+        run: |
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb anykernel/Image.gz-dtb
+          # dtbo.img opsional, sertakan kalau ada
+          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
+            cp kernel/out/arch/arm64/boot/dtbo.img anykernel/dtbo.img
+          fi
+          cd anykernel
+          ZIP_NAME="cepheus-vic-nopatch-$(date +%Y%m%d-%H%M).zip"
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+          zip -r9 "../${ZIP_NAME}" . -x ".git*" -x "README.md"
+
+      - name: Upload flashable zip
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_NAME }}
+          retention-days: 14
