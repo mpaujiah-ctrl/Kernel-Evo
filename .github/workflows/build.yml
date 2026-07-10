@@ -25,14 +25,27 @@ jobs:
       # --- INSTALL KSUN + SUSFS PAKAI SETUP SCRIPT RESMI ---
       # Branch next-susfs sudah include integrasi SUSFS, jadi gak perlu
       # patch/curl file terpisah dari repo lain.
-      - name: Install KernelSU-Next (next-susfs branch) via official setup script
+      - name: Install KernelSU-Next (legacy, untuk non-GKI) via official setup script
         run: |
           cd kernel
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
           echo "=== Verify hasil setup ==="
-          ls -la KernelSU-Next drivers/kernelsu 2>/dev/null || echo "cek nama folder yang ke-generate"
+          ls -la KernelSU-Next drivers/kernelsu 2>/dev/null
           grep -rn "kernelsu" drivers/Makefile drivers/Kconfig 2>/dev/null
-
+      
+      - name: Clone susfs4ksu (branch kernel-4.14) dan apply patch resmi
+        run: |
+          git clone --depth=1 -b kernel-4.14 https://gitlab.com/simonpunk/susfs4ksu.git
+          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch kernel/KernelSU-Next/
+          cd kernel/KernelSU-Next
+          patch -p1 < 10_enable_susfs_for_ksu.patch || (find . -name "*.rej" -exec cat {} \;)
+          cd ../..
+          cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch kernel/
+          cp susfs4ksu/kernel_patches/fs/* kernel/fs/
+          cp susfs4ksu/kernel_patches/include/linux/* kernel/include/linux/
+          cd kernel
+          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || (find . -name "*.rej" -exec cat {} \;)
+      
       - name: Enable CONFIG_KSU in defconfig
         run: |
           cd kernel
