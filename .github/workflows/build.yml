@@ -105,6 +105,16 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
+      - name: Diagnose ksu_input_hook
+        run: |
+          cd kernel
+          echo "=== Definisi (kalau ada) ==="
+          grep -rn "ksu_input_hook" --include=*.c KernelSU-Next/ 2>/dev/null
+          echo "=== Deklarasi (header) ==="
+          grep -rn "ksu_input_hook" --include=*.h KernelSU-Next/ 2>/dev/null
+          echo "=== File .rej yang nyebut input ==="
+          find KernelSU-Next -name "*.rej" -exec grep -l "input" {} \; -exec cat {} \;
+      
       - name: Build kernel
         run: |
           cd kernel
