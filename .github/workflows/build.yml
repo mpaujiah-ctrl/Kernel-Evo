@@ -117,6 +117,20 @@ jobs:
           echo "=== Cek apakah runtime/ punya Makefile sendiri ==="
           find KernelSU-Next -name "Makefile" -o -name "Kbuild"
       
+      - name: Cek isi Kbuild dan tambahkan runtime/ objects
+        run: |
+          cd kernel
+          KBUILD="KernelSU-Next/kernel/Kbuild"
+          echo "=== Isi Kbuild sebelum ==="
+          cat "$KBUILD"
+          echo "=== Nambahin runtime/ ==="
+          grep -q "runtime/ksud_integration.o" "$KBUILD" || \
+            echo 'obj-y += runtime/ksud_integration.o' >> "$KBUILD"
+          grep -q "runtime/boot_event.o" "$KBUILD" || \
+            echo 'obj-y += runtime/boot_event.o' >> "$KBUILD"
+          echo "=== Isi Kbuild sesudah ==="
+          cat "$KBUILD"
+      
       - name: Build kernel
         run: |
           cd kernel
