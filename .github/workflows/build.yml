@@ -41,17 +41,18 @@ jobs:
           cp susfs4ksu/kernel_patches/fs/* kernel/fs/
           cp susfs4ksu/kernel_patches/include/linux/* kernel/include/linux/
           cd kernel
-          patch -p1 < 50_add_susfs_in_kernel-4.14.patch
+          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || true
           echo "=== Cek reject files ==="
           find . -name "*.rej"
 
-      - name: Repair reject dari task_mmu.c (context offset di tree vic)
+      - name: Repair reject dari kernel/sys.c
         run: |
           cd kernel
-          if [ -f fs/proc/task_mmu.c.rej ]; then
-           grep -q "susfs_def.h" fs/proc/task_mmu.c || \
-           sed -i '/#include <linux\/mm_inline.h>/a #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n#include <linux/susfs_def.h>\n#endif' fs/proc/task_mmu.c
-           rm -f fs/proc/task_mmu.c.rej
+          if [ -f kernel/sys.c.rej ]; then
+            grep -q "susfs_spoof_uname" kernel/sys.c || \
+            sed -i '/SYSCALL_DEFINE1(newuname/i #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\nextern void susfs_spoof_uname(struct new_utsname* tmp);\n#endif' kernel/sys.c
+            sed -i '/memcpy(&tmp, utsname(), sizeof(tmp));/a #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n\tsusfs_spoof_uname(&tmp);\n#endif' kernel/sys.c
+            rm -f kernel/sys.c.rej
           fi
 
       - name: Fail build kalau masih ada reject tersisa
