@@ -105,31 +105,15 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
-      - name: Cari Kbuild asli untuk in-tree obj list
+      - name: Diagnose hook mode dan konteks ksu_input_hook
         run: |
           cd kernel
-          echo "=== File Kbuild di KernelSU-Next ==="
-          find KernelSU-Next -iname "Kbuild"
-          echo "=== Isi drivers/Makefile terkait kernelsu ==="
-          grep -n "kernelsu\|KernelSU" drivers/Makefile
-          echo "=== Isi drivers/Kconfig terkait kernelsu ==="
-          grep -n "kernelsu\|KernelSU" drivers/Kconfig
-          echo "=== Cek apakah runtime/ punya Makefile sendiri ==="
-          find KernelSU-Next -name "Makefile" -o -name "Kbuild"
-      
-      - name: Cek isi Kbuild dan tambahkan runtime/ objects
-        run: |
-          cd kernel
-          KBUILD="KernelSU-Next/kernel/Kbuild"
-          echo "=== Isi Kbuild sebelum ==="
-          cat "$KBUILD"
-          echo "=== Nambahin runtime/ ==="
-          grep -q "runtime/ksud_integration.o" "$KBUILD" || \
-            echo 'obj-y += runtime/ksud_integration.o' >> "$KBUILD"
-          grep -q "runtime/boot_event.o" "$KBUILD" || \
-            echo 'obj-y += runtime/boot_event.o' >> "$KBUILD"
-          echo "=== Isi Kbuild sesudah ==="
-          cat "$KBUILD"
+          echo "=== Config hook yang aktif di defconfig ==="
+          grep "CONFIG_KSU_KPROBES_HOOK\|CONFIG_KSU_MANUAL_HOOK" arch/arm64/configs/cepheus_defconfig || echo "TIDAK ADA keduanya di defconfig!"
+          echo "=== Konteks selinux_hide.c sekitar deklarasi ==="
+          sed -n '1,40p' KernelSU-Next/kernel/feature/selinux_hide.c
+          echo "=== Konteks ksud_integration.c sekitar definisi ==="
+          sed -n '1,90p' KernelSU-Next/kernel/runtime/ksud_integration.c
       
       - name: Build kernel
         run: |
