@@ -105,15 +105,17 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
-      - name: Diagnose ksu_input_hook
+      - name: Diagnose kenapa ksud_integration.c gak ke-link
         run: |
           cd kernel
-          echo "=== Definisi (kalau ada) ==="
-          grep -rn "ksu_input_hook" --include=*.c KernelSU-Next/ 2>/dev/null
-          echo "=== Deklarasi (header) ==="
-          grep -rn "ksu_input_hook" --include=*.h KernelSU-Next/ 2>/dev/null
-          echo "=== File .rej yang nyebut input ==="
-          find KernelSU-Next -name "*.rej" -exec grep -l "input" {} \; -exec cat {} \;
+          echo "=== Cari referensi ksud_integration di Makefile/Kconfig ==="
+          grep -rn "ksud_integration" --include=Makefile --include=Kconfig . 2>/dev/null || echo "TIDAK DITEMUKAN di Makefile manapun"
+          echo "=== Isi folder runtime/ ==="
+          ls -la KernelSU-Next/kernel/runtime/ 2>/dev/null
+          echo "=== Makefile drivers/kernelsu (kalau ada) ==="
+          find . -path "*/kernelsu/Makefile" -exec cat {} \;
+          echo "=== Sisa .rej yang nyebut input/runtime ==="
+          find KernelSU-Next -name "*.rej" | xargs -I{} sh -c 'echo "--- {} ---"; cat {}' 2>/dev/null || true
       
       - name: Build kernel
         run: |
