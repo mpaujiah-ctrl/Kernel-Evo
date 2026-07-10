@@ -117,6 +117,20 @@ jobs:
           echo "=== Sisa .rej yang nyebut input/runtime ==="
           find KernelSU-Next -name "*.rej" | xargs -I{} sh -c 'echo "--- {} ---"; cat {}' 2>/dev/null || true
       
+      - name: Wire folder runtime/ ke Makefile KernelSU-Next
+        run: |
+          cd kernel
+          MAKEFILE=$(find KernelSU-Next -maxdepth 2 -name "Makefile" | grep -v runtime | head -1)
+          echo "Pakai Makefile: $MAKEFILE"
+          cat "$MAKEFILE"
+          echo "=== Nambahin obj-y untuk runtime/ ==="
+          grep -q "runtime/ksud_integration.o" "$MAKEFILE" || \
+            echo 'obj-y += runtime/ksud_integration.o' >> "$MAKEFILE"
+          grep -q "runtime/boot_event.o" "$MAKEFILE" || \
+            echo 'obj-y += runtime/boot_event.o' >> "$MAKEFILE"
+          echo "=== Hasil akhir ==="
+          tail -20 "$MAKEFILE"
+      
       - name: Build kernel
         run: |
           cd kernel
