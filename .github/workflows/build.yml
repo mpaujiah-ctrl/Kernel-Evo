@@ -33,26 +33,51 @@ jobs:
           ls -la KernelSU-Next drivers/kernelsu 2>/dev/null
           grep -rn "kernelsu" drivers/Makefile drivers/Kconfig 2>/dev/null
       
-      - name: Clone susfs4ksu (branch kernel-4.14) dan apply patch resmi
+      
+      - name: Clone susfs4ksu (branch kernel-4.14) dan apply patch resmi ke kernel tree
         run: |
           git clone --depth=1 -b kernel-4.14 https://gitlab.com/simonpunk/susfs4ksu.git
-          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch kernel/KernelSU-Next/
-          cd kernel/KernelSU-Next
-          patch -p1 < 10_enable_susfs_for_ksu.patch || (find . -name "*.rej" -exec cat {} \;)
-          cd ../..
           cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch kernel/
           cp susfs4ksu/kernel_patches/fs/* kernel/fs/
           cp susfs4ksu/kernel_patches/include/linux/* kernel/include/linux/
           cd kernel
-          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || (find . -name "*.rej" -exec cat {} \;)
-      
-      - name: Enable CONFIG_KSU in defconfig
+          patch -p1 < 50_add_susfs_in_kernel-4.14.patch
+          echo "=== Cek reject files ==="
+          find . -name "*.rej"
+
+      - name: Repair reject dari task_mmu.c (context offset di tree vic)
         run: |
           cd kernel
-          grep -q "CONFIG_KSU=y" arch/arm64/configs/cepheus_defconfig || echo "CONFIG_KSU=y" >> arch/arm64/configs/cepheus_defconfig
-          sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EvolutionX_cepheus_v3.2.0_KSUN"/' arch/arm64/configs/cepheus_defconfig
-          grep "CONFIG_KSU\|CONFIG_LOCALVERSION" arch/arm64/configs/cepheus_defconfig
+          if [ -f fs/proc/task_mmu.c.rej ]; then
+           grep -q "susfs_def.h" fs/proc/task_mmu.c || \
+           sed -i '/#include <linux\/mm_inline.h>/a #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n#include <linux/susfs_def.h>\n#endif' fs/proc/task_mmu.c
+           rm -f fs/proc/task_mmu.c.rej
+          fi
 
+      - name: Fail build kalau masih ada reject tersisa
+        run: |
+          cd kernel
+          LEFTOVER=$(find . -name "*.rej")
+          if [ -n "$LEFTOVER" ]; then
+            echo "Masih ada patch reject, harus dicek manual:"
+            echo "$LEFTOVER"
+            for f in $LEFTOVER; do cat "$f"; done
+            exit 1
+          fi
+          echo "Semua patch bersih, lanjut build."
+      
+      - name: Enable CONFIG_KSU + SUSFS di defconfig
+        run: |
+          cd kernel
+          DEFCONFIG=arch/arm64/configs/cepheus_defconfig
+          for cfg in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
+                     CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT \
+                     CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SUS_SU \
+                     CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_ENABLE_LOG; do
+            grep -q "^${cfg}=y" $DEFCONFIG || echo "${cfg}=y" >> $DEFCONFIG
+          done
+          sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-EvolutionX_cepheus_v3.2.0_KSUN"/' $DEFCONFIG
+      
       - name: Check kprobe config (dibutuhkan KSUN Next untuk hooking otomatis)
         run: |
           cd kernel
