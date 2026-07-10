@@ -105,31 +105,17 @@ jobs:
           void dt_to_yaml(FILE *outf, struct dt_info *dti) {}
           CEOF
 
-      - name: Diagnose kenapa ksud_integration.c gak ke-link
+      - name: Cari Kbuild asli untuk in-tree obj list
         run: |
           cd kernel
-          echo "=== Cari referensi ksud_integration di Makefile/Kconfig ==="
-          grep -rn "ksud_integration" --include=Makefile --include=Kconfig . 2>/dev/null || echo "TIDAK DITEMUKAN di Makefile manapun"
-          echo "=== Isi folder runtime/ ==="
-          ls -la KernelSU-Next/kernel/runtime/ 2>/dev/null
-          echo "=== Makefile drivers/kernelsu (kalau ada) ==="
-          find . -path "*/kernelsu/Makefile" -exec cat {} \;
-          echo "=== Sisa .rej yang nyebut input/runtime ==="
-          find KernelSU-Next -name "*.rej" | xargs -I{} sh -c 'echo "--- {} ---"; cat {}' 2>/dev/null || true
-      
-      - name: Wire folder runtime/ ke Makefile KernelSU-Next
-        run: |
-          cd kernel
-          MAKEFILE=$(find KernelSU-Next -maxdepth 2 -name "Makefile" | grep -v runtime | head -1)
-          echo "Pakai Makefile: $MAKEFILE"
-          cat "$MAKEFILE"
-          echo "=== Nambahin obj-y untuk runtime/ ==="
-          grep -q "runtime/ksud_integration.o" "$MAKEFILE" || \
-            echo 'obj-y += runtime/ksud_integration.o' >> "$MAKEFILE"
-          grep -q "runtime/boot_event.o" "$MAKEFILE" || \
-            echo 'obj-y += runtime/boot_event.o' >> "$MAKEFILE"
-          echo "=== Hasil akhir ==="
-          tail -20 "$MAKEFILE"
+          echo "=== File Kbuild di KernelSU-Next ==="
+          find KernelSU-Next -iname "Kbuild"
+          echo "=== Isi drivers/Makefile terkait kernelsu ==="
+          grep -n "kernelsu\|KernelSU" drivers/Makefile
+          echo "=== Isi drivers/Kconfig terkait kernelsu ==="
+          grep -n "kernelsu\|KernelSU" drivers/Kconfig
+          echo "=== Cek apakah runtime/ punya Makefile sendiri ==="
+          find KernelSU-Next -name "Makefile" -o -name "Kbuild"
       
       - name: Build kernel
         run: |
