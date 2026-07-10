@@ -115,6 +115,9 @@ jobs:
           echo "=== Konteks ksud_integration.c sekitar definisi ==="
           sed -n '1,90p' KernelSU-Next/kernel/runtime/ksud_integration.c
       
+      - name: Fix ksu_input_hook hilang di mode Kprobes hook
+        run: python3 .github/scripts/fix_ksu_input_hook.py
+      
       - name: Build kernel
         run: |
           cd kernel
