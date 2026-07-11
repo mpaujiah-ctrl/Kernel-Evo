@@ -118,6 +118,46 @@ jobs:
       - name: Fix ksu_input_hook hilang di mode Kprobes hook
         run: python3 .github/scripts/fix_ksu_input_hook.py
       
+      - name: Backport path_umount manual (karena patch KernelSU-Next Makefile gagal)
+        run: |
+          cd kernel
+          if ! grep -q "^int path_umount" fs/namespace.c; then
+            cat >> fs/namespace.c << 'EOF'
+      
+          static int can_umount(const struct path *path, int flags)
+          {
+          	struct mount *mnt = real_mount(path->mnt);
+          	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
+          		return -EINVAL;
+          	if (!may_mount())
+          		return -EPERM;
+          	if (path->dentry != path->mnt->mnt_root)
+          		return -EINVAL;
+          	if (!check_mnt(mnt))
+          		return -EINVAL;
+          	if (mnt->mnt.mnt_flags & MNT_LOCKED)
+          		return -EINVAL;
+          	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
+          		return -EPERM;
+          	return 0;
+          }
+          
+          int path_umount(struct path *path, int flags)
+          {
+          	struct mount *mnt = real_mount(path->mnt);
+          	int ret;
+          	ret = can_umount(path, flags);
+          	if (!ret)
+          		ret = do_umount(mnt, flags);
+          	dput(path->dentry);
+          	mntput_no_expire(mnt);
+          	return ret;
+          }
+          EOF
+              fi
+              grep -q "^int path_umount" fs/internal.h || \
+                sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' fs/internal.h
+      
       - name: Build kernel
         run: |
           cd kernel
